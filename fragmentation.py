@@ -120,8 +120,10 @@ def pick_connected_set(comp: Set[int], adj: Sequence[Set[int]], k: int, rng: ran
     comp_list = sorted(comp)
     comp_set = set(comp_list)
     best: Optional[Set[int]] = None
+    ret = []
     for _ in range(tries):
         start = rng.choice(comp_list)
+        #print('Try is ',_)
         s = {start}
         frontier = (adj[start] & comp_set) - s
         while len(s) < k and frontier:
@@ -131,15 +133,17 @@ def pick_connected_set(comp: Set[int], adj: Sequence[Set[int]], k: int, rng: ran
             frontier |= (adj[nxt] & comp_set) - s
         if len(s) == k and is_connected(adj, s):
             best = s
-            break
-    return best
+            ret.append(s)
+            #break
+    #return best
+    return best, ret
 
 
 def main() -> int:
     RDLogger.DisableLog("rdApp.*")
     ap = argparse.ArgumentParser(description="Pick two fused fragments (near half) from each fused ring system.")
     ap.add_argument("--input", default="cleaned_cores.smi")
-    ap.add_argument("--output", default="two_fused_fragments.smi")
+    ap.add_argument("--output", default="all_fused_fragments.smi")
     ap.add_argument("--tries", type=int, default=5000)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--min-rings", type=int, default=3)
@@ -166,16 +170,21 @@ def main() -> int:
         k1 = n // 2
         k2 = n - k1
         # allow examples like 20 -> 10/10 ; 34 -> 17/17
-        a = pick_connected_set(core, adj, k1, rng, args.tries)
-        b = pick_connected_set(core, adj, k2, rng, args.tries)
-        if a is None or b is None:
+        a_best, allsmi_a = pick_connected_set(core, adj, k1, rng, args.tries)
+        b_best, allsmi_b = pick_connected_set(core, adj, k2, rng, args.tries)
+        if a_best is None or b_best is None:
             continue
 
-        smi_a = fragment_smiles_from_rings(mol, rings, sorted(a))
-        smi_b = fragment_smiles_from_rings(mol, rings, sorted(b))
-        if smi_a is None or smi_b is None:
-            continue
-        rows.append("\t".join([smi_a, smi_b, f"parent={parent_i}", f"coreRings={n}", f"targetA={k1}", f"targetB={k2}"]))
+        # save all generated fragments for both halves
+        for s in allsmi_a:
+            smi = fragment_smiles_from_rings(mol, rings, sorted(s))
+            if smi:
+                rows.append("\t".join([smi, f"parent={parent_i}", "half=A", f"coreRings={n}"]))
+
+        for s in allsmi_b:
+            smi = fragment_smiles_from_rings(mol, rings, sorted(s))
+            if smi:
+                rows.append("\t".join([smi, f"parent={parent_i}", "half=B", f"coreRings={n}"]))
 
     Path(args.output).write_text("\n".join(rows) + ("\n" if rows else ""), encoding="utf-8")
     print(f"Wrote {len(rows)} rows to {args.output}")
